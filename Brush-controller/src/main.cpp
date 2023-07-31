@@ -27,7 +27,7 @@ float GetAngle();
 bool SetupAngle();
 void MotorControl(int);
 void MotorSetup(void);
-void PIDr(void);
+void PIDreg(void);
 
 String ans = "";
 int targetangle;
@@ -50,7 +50,7 @@ void loop()
     if (millis() - timer >= PIDt)
     {
         timer = millis();
-        PIDr();
+        PIDreg();
     }
 }
 
@@ -173,7 +173,7 @@ void MotorControl(int x)
     }
 }
 
-void PIDr(void)
+void PIDreg(void)
 {
     static float input, setpoint, dt; // input,setpoint - Входные значения, остальное - коэффиценты
     static int I = 0;
