@@ -24,7 +24,7 @@ int main(){
 		exit(1);
 	}
 	if(nread == 0){
-		std::cout<<"eof\n";
+		std::cout<<"END OF FILE\n";
 	}
 	
 	close(fd);
