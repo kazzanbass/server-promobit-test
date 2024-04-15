@@ -1,35 +1,50 @@
-#include "errproc.h"
-#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <stdlib.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <iostream>
+#include <fstream>
 #include <unistd.h>
 
-int main(){
-	write(STDOUT_FILENO, "Сервер запущен\n", 29);
-	int server = Socket(AF_INET, SOCK_STREAM, 0);//присваиваем дескриптор сокета server
-	struct sockaddr_in adr = {0};//инициализируем структуру данных
-	adr.sin_family = AF_INET; //семейство протоколов IPv4
-	adr.sin_port = htons(34543);//присваиваем сокету порт 34543
-	Bind(server, (struct sockaddr *)&adr, sizeof adr);//привязываем сокет к структуре (порт)
-	Listen(server, 5);//Прослушиваем порт до 5 клиентов
-	socklen_t adrlen = sizeof adr;//инициализируем адрес структуры
-	int fd = Accept(server, (struct sockaddr *)&adr, &adrlen);//присваиваем дескриптор сокета клиента
-	ssize_t nread;//размер посланного клиентом сообщения
-	char buf[256];
-	nread = read(fd, buf, 256);//записываем сообщение клиента в буфер
-	if(nread==-1){
-		perror("read error");
+using namespace std;
+
+int main(int argc, char**argv){
+	
+	if(argc<2){
+		perror("PORT ERROR");//Если порт в argv[1] не указан завершаем программу
 		exit(1);
 	}
-	if(nread==0){
-		printf("END OF FILE\n");
+	
+	const int PORT = atoi(argv[1]); //Сохраняем номер порта в PORT
+	std::string PORT_STR = argv[1];
+	PORT_STR+=".txt";//Переделываем в текст для файла
+	
+	std::ofstream mes; //создаем поток ввода
+	
+	int servfd = socket(AF_INET, SOCK_STREAM, 0);//Создаем сокет сервера
+	struct sockaddr_in adr = {0};//Создаем структуру адреса
+	adr.sin_family = AF_INET;//IPv4
+	adr.sin_port = htons(PORT);//Порт
+	bind(servfd, (struct sockaddr *) &adr, sizeof(adr));//Присваиваем сокету адрес
+	socklen_t addrlen = sizeof(adr);//для accept
+	listen(servfd, 5);//сообщаем ОС о прослушке
+	
+	char answ = ' ';
+	while(answ!='y'){//Пока нет сигнала выключению сервера
+		int clifd = accept(servfd, (struct sockaddr *) &adr, &addrlen); //Ожидаем подключение от клиента
+		char buf[128];
+		read(clifd, buf, 128);//Считываем сообщение клиента в буфер
+		mes.open(PORT_STR); //
+		mes << buf;			//Записываем сообщение последнего клиента в файл
+		mes.close();		//
+		
+		sleep(3);//Ожидаем 3 секунды
+		write(clifd, "ACCEPTED\0", 9);//Отправляем клиенту сообщение
+		cout<<("Выключить сервер?(y/n) ==> ");//Узнаем у пользователя нужно ли выключить сервер
+		cin>>answ;
 	}
-	write(STDOUT_FILENO, buf, nread);
-	write(fd, buf, nread);
-	close(fd);//Закрываем сокет клиента
-	close(server); //Закрываем сокет сервера
+		
+	close(servfd);//Закрываем сокет сервера
 	
 	return 0;
 }
-	
