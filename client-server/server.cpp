@@ -1,3 +1,4 @@
+#include "errproc.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -21,17 +22,16 @@ int main(int argc, char**argv){
 	
 	std::ofstream mes; //создаем поток ввода
 	
-	int servfd = socket(AF_INET, SOCK_STREAM, 0);//Создаем сокет сервера
+	int servfd = Socket(AF_INET, SOCK_STREAM, 0);//Создаем сокет сервера
 	struct sockaddr_in adr = {0};//Создаем структуру адреса
 	adr.sin_family = AF_INET;//IPv4
 	adr.sin_port = htons(PORT);//Порт
-	bind(servfd, (struct sockaddr *) &adr, sizeof(adr));//Присваиваем сокету адрес
+	Bind(servfd, (struct sockaddr *) &adr, sizeof(adr));//Присваиваем сокету адрес
 	socklen_t addrlen = sizeof(adr);//для accept
-	listen(servfd, 5);//сообщаем ОС о прослушке
+	Listen(servfd, 5);//сообщаем ОС о прослушке
 	
-	char answ = ' ';
-	while(answ!='y'){//Пока нет сигнала выключению сервера
-		int clifd = accept(servfd, (struct sockaddr *) &adr, &addrlen); //Ожидаем подключение от клиента
+	while(true){//Пока нет сигнала выключению сервера
+		int clifd = Accept(servfd, (struct sockaddr *) &adr, &addrlen); //Ожидаем подключение от клиента
 		char buf[128];
 		read(clifd, buf, 128);//Считываем сообщение клиента в буфер
 		mes.open(PORT_STR); //
@@ -40,8 +40,6 @@ int main(int argc, char**argv){
 		
 		sleep(3);//Ожидаем 3 секунды
 		write(clifd, "ACCEPTED\0", 9);//Отправляем клиенту сообщение
-		cout<<("Выключить сервер?(y/n) ==> ");//Узнаем у пользователя нужно ли выключить сервер
-		cin>>answ;
 	}
 		
 	close(servfd);//Закрываем сокет сервера
