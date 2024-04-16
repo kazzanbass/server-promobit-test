@@ -41,9 +41,16 @@ int main(int argc, char**argv){
 			read(clifd, buf, 128);//Считываем сообщение клиента в буфер
 			if(strcmp(buf, "\END")==0){//Если приходит сигнал о прекращении подачи сообщений, выходим из цикла
 				cout<<"Конец отправки сообщений от клиента"<<endl;// и принимаем следующего клиента
+				cout<<"Выключить сервер?(y) ==> ";
+				char answ;
+				cin>>answ;
+				if(answ == 'y'){
+					close(servfd);
+					exit(1);
+				}
 				break;//
 			}
-			mes.open(PORT_STR); //
+			mes.open(PORT_STR, ios::app);
 			mes << buf;			//Записываем сообщение последнего клиента в файл
 			mes.close();		//
 			sleep(3);//Ожидаем 3 секунды
