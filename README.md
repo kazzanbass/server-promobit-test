@@ -1,3 +1,1 @@
-# kazanrep
-kazanrep for kazancode
-Личный репозиторий
+#TCP сервер приема сообщений(С/C++)
