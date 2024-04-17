@@ -8,7 +8,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-
 int Socket(int domain, int type, int protocol){
 	int res = socket(domain, type, protocol);
 	if(res == -1){
