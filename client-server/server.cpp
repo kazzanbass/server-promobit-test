@@ -1,4 +1,3 @@
-// Без задержки времени
 #include "errproc.h"
 #include <liburing.h>
 #include <sys/types.h>
@@ -163,10 +162,12 @@ void add_socket_read(struct io_uring *ring, int fd, size_t size, string PORT)
 	struct io_uring_sqe *sqe = io_uring_get_sqe(ring); // получаем указатель на первый доступный sqe
 	char buffer[MAX_MESSAGE_LEN];
 	io_uring_prep_recv(sqe, fd, &buffer, size, 0); // читаем сообщение в буфер
-
-	out.open(PORT, ios::app); // записываем сообщение из буфера в файл
-	out << buffer;
-	out.close();
+	
+	FILE *out;
+	
+	fo = fopen(PORT.cstr(), "w")
+	fwrite(fo, buffer);
+	fclose(fo);
 
 	// устанавливаем состояние серверного сокета в read
 	conn_info *conn_i = &conns[fd];

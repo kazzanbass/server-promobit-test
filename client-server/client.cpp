@@ -10,9 +10,7 @@
 using namespace std;
 
 void send_message(int fd){
-	char message[128];
-	cout<<"Введите сообщение(128 байт) ==> ";
-	cin>>message;
+	char message[128] = "Hello, server!\n\0";
 	write(fd, message, 128);
 }
 
