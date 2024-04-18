@@ -10,9 +10,9 @@
 using namespace std;
 
 void send_message(int fd){
-	char *message = "Hello!";
-	//cout<<"Введите сообщение(128 байт) ==> ";
-	//cin>>message;
+	char message[128];
+	cout<<"Введите сообщение(128 байт) ==> ";
+	cin>>message;
 	write(fd, message, 128);
 }
 
@@ -27,9 +27,8 @@ int main(){
 		send_message(fd); //Отправляем сообщение серверу
 		char buf[128];
 		read(fd, buf, 128);//Читаем сообщение от сервера
-		close(fd);//Закрываем сокет
 		cout<<buf<<endl;//Выводим ответ на консоль			
-        
+        close(fd);//Закрываем сокет
         
         return 0;
 }

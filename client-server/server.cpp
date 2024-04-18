@@ -1,3 +1,4 @@
+//Без задержки времени
 #include "errproc.h"
 #include <liburing.h>
 #include <sys/types.h>
