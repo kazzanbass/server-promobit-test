@@ -1,0 +1,3 @@
+/home/eniac/Programming/GitHub/server-promobit-test/client-server/CMakeFiles/server.dir
+/home/eniac/Programming/GitHub/server-promobit-test/client-server/CMakeFiles/edit_cache.dir
+/home/eniac/Programming/GitHub/server-promobit-test/client-server/CMakeFiles/rebuild_cache.dir
