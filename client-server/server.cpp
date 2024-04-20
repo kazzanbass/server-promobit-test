@@ -1,5 +1,4 @@
 #include "errproc.h"
-#include <liburing.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -8,191 +7,176 @@
 #include <fstream>
 #include <unistd.h>
 #include <cstring>
-#include <cassert>
-#include <ctime>
+#include <liburing.h>
+#include <assert.h>
 
-#define MAX_CONNECTIONS 4096 // Максимальное количество подключений
-#define BACKLOG 512			 // Кол-во подключений к сокету
-#define MAX_MESSAGE_LEN 128	 // Максимальная длина сообщения
+#define MAX_MESSAGE_LEN 128
+#define MAX_CONNECTIONS 1024
+#define BACKLOG 512
 
 using namespace std;
 
-void add_accept(struct io_uring *ring, int fd, struct sockaddr *client_addr, socklen_t *client_len); // слушаем подключения к сокету
+typedef struct CQE_DAT{
+	int fd;
+	int type;
+}CQE_DAT;
 
-void add_socket_read(struct io_uring *ring, int fd, size_t size, string PORT); // читаем сообщение от клиента
-
-void add_socket_write(struct io_uring *ring, int fd); // отправляем клиенту ACCEPTEDz
-
-typedef struct conn_info
-{				   // информация о сокете
-	int fd;		   // дескриптор сокета
-	unsigned type; // тип состояния в котором находится сокет(Accept, read, write)
-} conn_info;
-
-enum
-{
+enum{
 	ACCEPT,
 	READ,
-	WRITE,
+	FWRITE,
+	SEND,
 };
 
-conn_info conns[MAX_CONNECTIONS]; // буфер для соединений
+CQE_DAT CQE_DATAS[MAX_CONNECTIONS];
+char BUFF[MAX_CONNECTIONS][MAX_MESSAGE_LEN];
+int handle;
 
-void timer()
-{ // таймер
-	clock_t end_time = clock() + 3 * CLOCKS_PER_SEC;
-	while (clock() < end_time)
-	{
-	}
-}
+void SQE_ACCEPT(struct io_uring *ring, int fd, struct sockaddr *addr, socklen_t *addrlen);
+void SQE_READ(struct io_uring *ring, int fd);
+void SQE_FWRITE(struct io_uring *ring, int fd);
+void SQE_SEND_ACCEPTED(struct io_uring *ring, int fd);
 
-int main(int argc, char **argv)
-{
 
-	if (argc < 2)
-	{
-		perror("PORT ERROR"); // Если порт в argv[1] не указан завершаем программу
-		exit(1);
-	}
-
-	const int PORT = atoi(argv[1]); // Сохраняем номер порта в PORT
-	std::string PORT_STR = argv[1];
-	PORT_STR += ".txt"; // Переделываем в текст для файла
-
-	// std::ofstream mes; //создаем поток ввода
-
-	int servfd = Socket(AF_INET, SOCK_STREAM, 0); // Создаем сокет сервера
-
-	struct sockaddr_in adr = {0};	   // Создаем структуру адреса сервера
-	struct sockaddr_in cliadr = {0};   // создаем структуру адреса клиента
-	socklen_t clilen = sizeof(cliadr); // размер cliadr
-
-	adr.sin_family = AF_INET;	// IPv4
-	adr.sin_port = htons(PORT); // Порт
-
-	Bind(servfd, (struct sockaddr *)&adr, sizeof(adr)); // Присваиваем сокету адрес
-
-	Listen(servfd, 5); // сообщаем ОС о прослушке
-
-	// Создаем инстанс io_uring
+int main(int argc, char**argv){
+	string PORTNUM;
+	if(argc<2)
+		PORTNUM = "8080";
+	else
+		PORTNUM = argv[1];
+		
+	int PORT = atoi(PORTNUM.c_str());
+	
+	string PORT_FILE = PORTNUM;
+	PORT_FILE+=".txt";
+	
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	
+	
+	struct sockaddr_in adr = {0};
+	struct sockaddr_in cli_adr = {0};
+	
+	adr.sin_port = htons(PORT);
+	adr.sin_family = AF_INET;
+	
+	socklen_t addrlen = sizeof(adr);
+	socklen_t cli_addrlen = sizeof(cli_adr);
+	
+	int res = bind(sockfd, (struct sockaddr*)&adr, addrlen);
+	assert(res!=-1);
+	
+	res = listen(sockfd, BACKLOG);
+	assert(res == 0);
+	
+	FILE* fo;
+	fo = fopen(PORT_FILE.c_str(), "w");
+	fclose(fo);
+	FILE* fo1;
+	fo1 = fopen(PORT_FILE.c_str(), "a");
+	handle = fileno(fo1);
+	
 	struct io_uring ring;
-	struct io_uring_params params = {0};
-
-	assert(io_uring_queue_init_params(4096, &ring, &params) >= 0); // Устанавливаем параметры вхождения, емкость как 4096
-
-	// Добавляем в SQ первую операцию - слушаем сокет сервера для приема входящих соединений
-	add_accept(&ring, servfd, (struct sockaddr *)&cliadr, &clilen);
-
-	while (true)
-	{ // Пока нет сигнала выключению сервера
-
-		struct io_uring_cqe *cqe;
-		int ret;
-
-		io_uring_submit(&ring);				  // Отправляем ядру все SQE, которые были добавлены в прошлой итерации
-		ret = io_uring_wait_cqe(&ring, &cqe); // ждем когда в буфере появится cqe
-		assert(ret == 0);
-
-		struct io_uring_cqe *cqes[BACKLOG];													  // буфер для выполненных cqe
-		int cqe_count = io_uring_peek_batch_cqe(&ring, cqes, sizeof(cqes) / sizeof(cqes[0])); // количество cqe
-
-		for (int i = 0; i < cqe_count; i++)
-		{
+	struct io_uring_params params;
+	memset(&params, 0, sizeof(params));
+	
+	res = io_uring_queue_init_params(1024, &ring, &params);
+	assert(res==0);
+	
+	SQE_ACCEPT(&ring, sockfd, (struct sockaddr*)&cli_adr, &cli_addrlen);
+	
+	
+	while(true){
+		struct io_uring_cqe* cqe;
+		
+		res = io_uring_submit(&ring);
+		
+		res = io_uring_wait_cqe(&ring, &cqe);
+		assert(res == 0);
+		
+		struct io_uring_cqe* cqes[BACKLOG];
+		int cqe_count = io_uring_peek_batch_cqe(&ring, cqes, sizeof(cqes)/sizeof(cqes[0]));
+		for(int i=0; i<cqe_count; i++){
 			cqe = cqes[i];
-
-			struct conn_info *user_data = (struct conn_info *)io_uring_cqe_get_data(cqe); // Заранее присвоили
-			//																				//user_data указатель на структуру с
-			// информацией о сокете
-			unsigned type = user_data->type; // Определяем операцию к которой относится CQE(accept/recv/send)
-
-			switch (type)
-			{
-			case ACCEPT:
-			{
-				int sock_conn_fd = cqe->res;
-				// Если появилось новое соединение: добавляем в SQ операцию recv - читаем из клиентского сокета
-				add_socket_read(&ring, sock_conn_fd, MAX_MESSAGE_LEN, PORT_STR);
-				add_accept(&ring, servfd, (struct sockaddr *)&cliadr, &clilen); // продолжаем слушать серверный сокет
+			CQE_DAT* data = (CQE_DAT*)io_uring_cqe_get_data(cqe);
+			int type = data->type;
+			
+			switch(type){
+				case ACCEPT:{
+					int fd = cqe->res;
+					SQE_READ(&ring, fd);
+					SQE_ACCEPT(&ring, sockfd, (struct sockaddr*)&cli_adr, &cli_addrlen);
+					break;
+				}
+				case READ:{
+					int fd = data->fd;
+					//int bytes = cqe->res;
+					SQE_FWRITE(&ring, fd);
+					break;
+				}
+				case FWRITE:{
+					int fd = data->fd;
+					SQE_SEND_ACCEPTED(&ring, fd);
+					break;
+				}
+				case SEND:{
+					int fd = data->fd;
+					SQE_READ(&ring, fd);
+					break;
+				}
 			}
-			break;
-			case READ:
-			{
-				add_socket_write(&ring, user_data->fd); // добавляем в sq операцию send - отправляем accept клиенту
-			}
-			break;
-			case WRITE:
-			{ // Запись в клиентский сокет окончена: добавляем в sq операцию recv - читаем из клиентского сокета
-				add_socket_read(&ring, user_data->fd, MAX_MESSAGE_LEN, PORT_STR);
-				break;
-			}
-			}
-
-			io_uring_cqe_seen(&ring, cqe); // помечаем cqe как прочитанное
+			io_uring_cqe_seen(&ring, cqe);
 		}
 	}
-
-	return 0;
 }
 
-// Помещаем операцию accept в SQ, fd - дескриптор сокета, на котором принимаем соединение
-void add_accept(struct io_uring *ring, int fd, struct sockaddr *client_addr, socklen_t *client_len)
-{ // слушаем подключения к сокету
-	cout << "Accept NOW!!!" << endl;
-	// получаем указатель на первый доступный sqe
+void SQE_ACCEPT(struct io_uring *ring, int fd, struct sockaddr *addr, socklen_t *addrlen){
+	//cout<<"Accept now!"<<endl;
 	struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-
-	io_uring_prep_accept(sqe, fd, client_addr, client_len, 0); // помещаем операцию accept в sqe
-
-	// устанавливаем состояние серверного сокета в ACCEPT
-	conn_info *conn_i = &conns[fd];
-	conn_i->fd = fd;
-	conn_i->type = ACCEPT;
-
-	// устанавливаем в поле user_data указатель на socketInfo соответсвующий серверному сокету
-	io_uring_sqe_set_data(sqe, conn_i);
-	cout << "Accept END!!!" << endl;
-}
-
-// Помещаем операцию recv в SQ, записываем данные в файл
-void add_socket_read(struct io_uring *ring, int fd, size_t size, string PORT)
-{
-	cout << endl
-		 << "Read NOW!" << endl;
-	ofstream out;									   // Создаем поток вывода
-	struct io_uring_sqe *sqe = io_uring_get_sqe(ring); // получаем указатель на первый доступный sqe
-	char buffer[MAX_MESSAGE_LEN];
-	io_uring_prep_recv(sqe, fd, &buffer, size, 0); // читаем сообщение в буфер
+	io_uring_prep_accept(sqe, fd, addr, addrlen, 0);
 	
-	FILE *out;
+	CQE_DAT* data = &CQE_DATAS[fd];
+	data->fd = fd;
+	data->type = ACCEPT;
 	
-	fo = fopen(PORT.cstr(), "w")
-	fwrite(fo, buffer);
-	fclose(fo);
-
-	// устанавливаем состояние серверного сокета в read
-	conn_info *conn_i = &conns[fd];
-	conn_i->fd = fd;
-	conn_i->type = READ;
-
-	// Устанавливаем в поле user_data указатель на socketInfo, соответствующий клиентскому сокету
-	io_uring_sqe_set_data(sqe, conn_i);
-
-	cout << "Read END!" << endl;
+	io_uring_sqe_set_data(sqe, data);
 }
 
-void add_socket_write(struct io_uring *ring, int fd)
-{
-	cout << "Write NOW!" << endl;
-	const char *ACCEPTED = "ACCEPTED\n\0";			   // Строка, которая будет передаваться клиенту
-	struct io_uring_sqe *sqe = io_uring_get_sqe(ring); // Получаем указатель на первый доступный sqe
-
-	// Устанавливаем состояния серверного сокета в write
-	conn_info *conn_i = &conns[fd];
-	conn_i->fd = fd;
-	conn_i->type = WRITE;
-
-	timer();									  // ожидаем 3 секунды
-	io_uring_prep_send(sqe, fd, ACCEPTED, 10, 0); // отправляем accept
-	io_uring_sqe_set_data(sqe, conn_i);			  // устанавливаем в поле user_data указатель на socketInfo соответствующий клиентскому сокету
-	cout << "Write END!" << endl;
+void SQE_READ(struct io_uring *ring, int fd){
+	struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+	io_uring_prep_read(sqe, fd, &BUFF[fd], MAX_MESSAGE_LEN, 0);
+	
+	CQE_DAT* data = &CQE_DATAS[fd];
+	data->fd = fd;
+	data->type = READ;
+	
+	io_uring_sqe_set_data(sqe, data);
 }
+
+void SQE_FWRITE(struct io_uring *ring, int fd){
+	struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+	char *message = BUFF[fd];
+	size_t message_len = strlen(message);
+	io_uring_prep_write(sqe, handle, &BUFF[fd], message_len, 0);
+	
+	CQE_DAT* data = &CQE_DATAS[fd];
+	data->fd = fd;
+	data->type = FWRITE;
+	
+	io_uring_sqe_set_data(sqe, data);
+}
+
+void SQE_SEND_ACCEPTED(struct io_uring *ring, int fd){
+	struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+	char *ACCEPTED = "ACCEPTED\n";
+	size_t size = strlen(ACCEPTED);
+	
+	io_uring_prep_write(sqe, fd, ACCEPTED, size, 0);
+	
+	CQE_DAT* data = &CQE_DATAS[fd];
+	data->fd = fd;
+	data->type = SEND;
+	
+	io_uring_sqe_set_data(sqe, data);
+}
+
+
