@@ -9,6 +9,8 @@
 #include <liburing.h>
 #include <assert.h>
 #include <ctime>
+//#include <chrono>
+//#include <thread>
 
 #define MAX_MESSAGE_LEN 128 //Максимальная длина сообщения
 #define MAX_CONNECTIONS 1024//Максимальное количество подключений
@@ -175,6 +177,7 @@ void SQE_FWRITE(struct io_uring *ring, int fd){
 
 void SQE_SEND_ACCEPTED(struct io_uring *ring, int fd){
 	struct io_uring_sqe *sqe = io_uring_get_sqe(ring);//инициализируем sqe первым полученным sqe
+
 	char *ACCEPTED = "ACCEPTED\n";
 	size_t size = strlen(ACCEPTED);
 	
